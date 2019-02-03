@@ -97,6 +97,112 @@ $ sudo ufw enable
 21 Running $ sudo ufw status should show all of the allowed ports with the firewall configuration.
 That pretty much wraps up the Linux configuration, now onto the app deployment.
 
+# Application Deployment
+ Hosting this application will require the Python virtual environment, Apache with mod_wsgi, PostgreSQL, and Git.
+ 1. Start by installing the required software
+```
+$ sudo apt-get install apache2
+$ sudo apt-get install libapache2-mod-wsgi python-dev
+$ sudo apt-get install git
+```
+2. Enable mod_wsgi with the command `$ sudo a2enmod wsgi` and restart Apache using `$ sudo service apache2 restart`.
+3. If you input the servers IP address into a web browser you'll see the Apache2 Ubuntu Default Page
+4. We now have to create a directory for our catalog application and make the user **grader** the owner.
+```
+$ cd /var/www
+$ sudo mkdir catalog
+$ sudo chown -R grader:grader catalog
+$ cd catalog
+```
+5. In this directory we will have our **catalog.wsgi** file `var/www/catalog/catalog.wsgi`, our virtual environment directory which we will create soon and call **venv** `/var/www/catalog/venv`, and also our application which will sit inside of another directory called **catalog** `/var/www/catalog/catalog`.
+6. First lets start by cloning our Catalog Application repository by `$ git clone [repository url] catalog`
+7. Create the .wsgi file by `$ sudo nano catalog.wsgi` and make sure your secret key matches with your project secret key
+```
+import sys
+import logging
+logging.basicConfig(stream=sys.stderr)
+sys.path.insert(0, "/var/www/catalog/")
+
+from catalog import app as application
+application.secret_key = 'super_secret_key'
+```
+8. Rename your `application.py`, `project.py`, or whatever you called it in your catalog application folder to `__init__.py` by `$ mv project.py __init__.py`
+9. Now lets create our virtual environment, make sure you are in `/var/www/catalog`.
+```
+$ sudo pip install virtualenv
+$ sudo virtualenv venv
+$ source venv/bin/activate
+$ sudo chmod -R 777 venv
+``` 
+This is what your command line should look like
+![enter image description here](http://mulligandev.com/assets/lsc/lsc_07.png)
+ 
+10.  While our virtual environment is activated we need to install all packages required for our Flask application. Here are some defaults but you may have more to install.
+```
+$ sudo apt-get install python-pip
+$ sudo pip install flask
+$ sudo pip install httplib2 oauth2client sqlalchemy psycopg2 #etc...
+```
+
+11. Now for our application to properly run we must do some tweaking to the `__init__.py` file.
+12. Anywhere in the file where Python tries to open `client_secrets.json` or `fb_client_secrets.json` must be changed to its complete path ex: `/var/www/catalog/catalog/client_secrets.json`
+![enter image description here](http://mulligandev.com/assets/lsc/lsc_08.JPG)
+
+13.  Time to configure and enable our virtual host to run the site
+```
+$ sudo nano /etc/apache2/sites-available/catalog.conf
+```
+Paste in the following: 
+```
+<VirtualHost *:80>
+    ServerName [Public IP]
+    ServerAlias [Hostname]
+    ServerAdmin admin@35.167.27.204
+    WSGIDaemonProcess catalog python-path=/var/www/catalog:/var/www/catalog/venv/lib/python2.7/site-packages
+    WSGIProcessGroup catalog
+    WSGIScriptAlias / /var/www/catalog/catalog.wsgi
+    <Directory /var/www/catalog/catalog/>
+        Order allow,deny
+        Allow from all
+    </Directory>
+    Alias /static /var/www/catalog/catalog/static
+    <Directory /var/www/catalog/catalog/static/>
+        Order allow,deny
+        Allow from all
+    </Directory>
+    ErrorLog ${APACHE_LOG_DIR}/error.log
+    LogLevel warn
+    CustomLog ${APACHE_LOG_DIR}/access.log combined
+</VirtualHost>
+```
+If you need help finding your servers hostname go [here](https://whatismyipaddress.com/ip-hostname) and paste the IP address. Save and quit nano
+
+14. Enable to virtual host: `$ sudo a2ensite catalog.conf` and **DISABLE** the default host `$ a2dissite 000-default.conf` **otherwise your site will not load with the hostname**.
+
+15. The final step is setting up the database
+```
+$ sudo apt-get install libpq-dev python-dev
+$ sudo apt-get install postgresql postgresql-contrib
+$ sudo su - postgres -i
+$ psql
+```
+16. Create a database user and password
+```
+postgres=# CREATE USER catalog WITH PASSWORD [password];
+postgres=# ALTER USER catalog CREATEDB;
+postgres=# CREATE DATABASE catalog with OWNER catalog;
+postgres=# \c catalog
+catalog=# REVOKE ALL ON SCHEMA public FROM public;
+catalog=# GRANT ALL ON SCHEMA public TO catalog;
+catalog=# \q
+$ exit
+```
+Your command line should now be back to `grader`.
+
+17. Now use nano again to edit your` __init__.py`, `database_setup.py`, and `createitems.py` files to change the database engine from `sqlite://catalog.db` to `postgresql://username:password@localhost/catalog`
+![enter image description here](http://mulligandev.com/assets/lsc/lsc_09.JPG)
+
+18. Restart your apache server `$ sudo service apache2 restart` and now your IP address and hostname should both load your application.
 
 ## Amazon Lightsail Set Up
 Go to the Amazon Lightsail website [https://aws.amazon.com/lightsail/]
